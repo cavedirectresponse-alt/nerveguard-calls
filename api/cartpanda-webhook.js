@@ -4,13 +4,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1️⃣ Parse do corpo recebido
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     console.log("📩 Webhook recebido:", body);
 
     const d = body.data;
 
-    // 2️⃣ Extrai nome, link e telefone do JSON da CartPanda
+    // 🔹 Extrai informações da CartPanda
     const name =
       d?.customer?.full_name ||
       [d?.customer?.first_name, d?.customer?.last_name].filter(Boolean).join(" ") ||
@@ -36,15 +35,23 @@ export default async function handler(req, res) {
       });
     }
 
-    // 3️⃣ Chama a API da Retell (domínio .com)
+    // 🔐 Chaves e endpoint corretos da Retell
+    const apiKey = process.env.RETELL_API_KEY;
+    const agentId = process.env.RETELL_AGENT_ID;
+
+    if (!apiKey || !agentId) {
+      return res.status(500).json({ success: false, error: "Variáveis da Retell ausentes" });
+    }
+
+    // 🧠 Chamada à API Retell (endpoint oficial)
     const retellResponse = await fetch("https://api.retellai.com/v1/calls", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.RETELL_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        agent_id: process.env.RETELL_AGENT_ID,
+        agent_id: agentId,
         phone_number: normalizedPhone,
         variables: {
           name,
@@ -53,7 +60,6 @@ export default async function handler(req, res) {
       }),
     });
 
-    // 4️⃣ Trata o retorno da Retell
     const retellJson = await retellResponse.json();
     console.log("📞 Resposta da Retell:", retellJson);
 
@@ -65,7 +71,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // 5️⃣ Retorna sucesso para a CartPanda
+    // ✅ Sucesso total
     return res.status(200).json({
       success: true,
       message: "Webhook recebido e enviado à Retell AI com sucesso",
