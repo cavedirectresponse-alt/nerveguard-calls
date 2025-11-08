@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     }
 
     // 3) CHAMA A RETELL (liga automaticamente)
-    const retellResp = await fetch("https://api.retellai.com/calls", {
+    const retellResp = await fetch("https://api.retell.ai/v1/call", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
