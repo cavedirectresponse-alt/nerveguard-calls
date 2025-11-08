@@ -45,18 +45,19 @@ const retellResp = await fetch("https://api.retellai.com/v2/create-phone-call", 
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${RETELL_API_KEY}`,
+    Authorization: `Bearer ${process.env.RETELL_API_KEY}`,
   },
   body: JSON.stringify({
-    agent_id: RETELL_AGENT_ID,
-    from_number: process.env.RETELL_FROM_NUMBER, // <- número da sua conta Retell (origem da ligação)
-    phone_number: normalizedPhone,                // <- número do cliente (destino)
+    agent_id: process.env.RETELL_AGENT_ID,
+    from_number: process.env.RETELL_FROM_NUMBER, // número de origem (o seu)
+    to_number: normalizedPhone,                   // número de destino (cliente)
     variables: {
       name,
       checkout_link: checkoutUrl,
     },
   }),
 });
+
 
 
     const retellJson = await retellResp.json();
