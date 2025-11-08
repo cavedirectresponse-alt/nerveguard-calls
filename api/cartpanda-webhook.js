@@ -4,54 +4,51 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Parse seguro do corpo
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     console.log("📩 Webhook recebido:", body);
 
+    const evt = body.event;
     const d = body.data;
 
-    // 🔹 Extrai informações da CartPanda
+    // Nome
     const name =
       d?.customer?.full_name ||
       [d?.customer?.first_name, d?.customer?.last_name].filter(Boolean).join(" ") ||
       "there";
 
+    // Link do carrinho
     const checkoutUrl =
       d?.cart_url ||
       (d?.cart_token ? `https://pay.getnerveguard.org/checkout/${d.cart_token}` : null);
 
+    // Telefone
     const rawPhone =
       d?.customer?.phone || d?.customer_info?.phone || d?.phone || null;
 
     const normalizedPhone = rawPhone
-      ? /^\+/.test(rawPhone)
-        ? rawPhone
-        : `+1${rawPhone.replace(/\D/g, "")}`
+      ? (/^\+/.test(rawPhone) ? rawPhone : `+1${rawPhone.replace(/\D/g, "")}`)
       : null;
 
     if (!normalizedPhone || !checkoutUrl) {
-      return res.status(400).json({
-        success: false,
-        error: "Faltam informações obrigatórias (phone ou checkoutUrl)",
-      });
+      return res
+        .status(400)
+        .json({ success: false, error: "Faltam phone ou checkoutUrl" });
     }
 
-    // 🔐 Chaves e endpoint corretos da Retell
-    const apiKey = process.env.RETELL_API_KEY;
-    const agentId = process.env.RETELL_AGENT_ID;
+    // 🔐 Use variáveis de ambiente da Vercel para segurança
+    const RETELL_API_KEY = process.env.RETELL_API_KEY;
+    const RETELL_AGENT_ID = process.env.RETELL_AGENT_ID;
 
-    if (!apiKey || !agentId) {
-      return res.status(500).json({ success: false, error: "Variáveis da Retell ausentes" });
-    }
-
-    // 🧠 Chamada à API Retell (endpoint oficial)
-    const retellResponse = await fetch("https://api.retellai.com/v1/calls", {
+    // 🚀 Faz a chamada para a Retell AI
+    const retellResp = await fetch("https://api.retellai.com/v2/create-phone-call", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${RETELL_API_KEY}`,
       },
       body: JSON.stringify({
-        agent_id: agentId,
+        agent_id: RETELL_AGENT_ID,
         phone_number: normalizedPhone,
         variables: {
           name,
@@ -60,24 +57,23 @@ export default async function handler(req, res) {
       }),
     });
 
-    const retellJson = await retellResponse.json();
-    console.log("📞 Resposta da Retell:", retellJson);
+    const retellJson = await retellResp.json();
+    console.log("📞 Retell response:", retellJson);
 
-    if (!retellResponse.ok) {
+    if (!retellResp.ok) {
       return res.status(502).json({
         success: false,
-        error: "Falha ao contatar Retell",
+        error: "Erro ao contatar Retell",
         retell: retellJson,
       });
     }
 
-    // ✅ Sucesso total
     return res.status(200).json({
       success: true,
       message: "Webhook recebido e enviado à Retell AI com sucesso",
       name,
       checkoutUrl,
-      normalizedPhone,
+      phone: normalizedPhone,
       retell: retellJson,
     });
   } catch (error) {
