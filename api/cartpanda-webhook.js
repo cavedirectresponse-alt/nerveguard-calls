@@ -41,21 +41,23 @@ export default async function handler(req, res) {
     const RETELL_AGENT_ID = process.env.RETELL_AGENT_ID;
 
     // 🚀 Faz a chamada para a Retell AI
-    const retellResp = await fetch("https://api.retellai.com/v2/create-phone-call", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${RETELL_API_KEY}`,
-      },
-      body: JSON.stringify({
-        agent_id: RETELL_AGENT_ID,
-        phone_number: normalizedPhone,
-        variables: {
-          name,
-          checkout_link: checkoutUrl,
-        },
-      }),
-    });
+const retellResp = await fetch("https://api.retellai.com/v2/create-phone-call", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${RETELL_API_KEY}`,
+  },
+  body: JSON.stringify({
+    agent_id: RETELL_AGENT_ID,
+    from_number: process.env.RETELL_FROM_NUMBER, // <- número da sua conta Retell (origem da ligação)
+    phone_number: normalizedPhone,                // <- número do cliente (destino)
+    variables: {
+      name,
+      checkout_link: checkoutUrl,
+    },
+  }),
+});
+
 
     const retellJson = await retellResp.json();
     console.log("📞 Retell response:", retellJson);
