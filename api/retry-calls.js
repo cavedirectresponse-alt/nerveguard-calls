@@ -47,9 +47,12 @@ export default async function handler(req, res) {
       const data = await resp.json();
       console.log(`🔁 Resultado retry #${call.attempt + 1}:`, data);
 
+      // 🧠 Nova lógica: só re-tenta se o motivo for "voicemail_reached", "dial_no_answer" ou "user_declined"
       const failed =
         data.status === "error" ||
-        ["no_answer", "failed", "busy", "voicemail"].includes(data.call_status);
+        ["voicemail_reached", "dial_no_answer", "user_declined"].includes(
+          data.end_reason || data.call_status
+        );
 
       if (failed) {
         remaining.push({
