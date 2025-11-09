@@ -1,3 +1,6 @@
+import fs from "fs";
+import path from "path";
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Método não permitido" });
@@ -9,7 +12,7 @@ export default async function handler(req, res) {
 
     const d = body.data;
 
-    // Extrai dados
+    // 🔹 Extrai dados do cliente
     const name =
       d?.customer?.full_name ||
       [d?.customer?.first_name, d?.customer?.last_name].filter(Boolean).join(" ") ||
@@ -35,7 +38,7 @@ export default async function handler(req, res) {
     const RETELL_AGENT_ID = process.env.RETELL_AGENT_ID;
     const RETELL_FROM_NUMBER = process.env.RETELL_FROM_NUMBER;
 
-    // ☎️ 1ª tentativa de ligação
+    // ☎️ 1ª tentativa
     const retellResp = await fetch("https://api.retellai.com/v2/create-phone-call", {
       method: "POST",
       headers: {
@@ -49,6 +52,7 @@ export default async function handler(req, res) {
         variables: {
           name,
           checkout_url: checkoutUrl,
+          attempt: 1,
         },
       }),
     });
@@ -56,39 +60,28 @@ export default async function handler(req, res) {
     const retellJson = await retellResp.json();
     console.log("📞 Retell Response:", retellJson);
 
-    // Verifica se a chamada falhou e re-tenta depois de 10 minutos
-    if (
+    const failed =
       retellJson.status === "error" ||
-      retellJson.call_status === "no_answer" ||
-      retellJson.call_status === "failed"
-    ) {
-      console.log("⚠️ Primeira tentativa falhou. Nova tentativa agendada para +10min.");
+      ["no_answer", "failed", "busy", "voicemail"].includes(retellJson.call_status);
 
-      // Agenda nova tentativa após 10 minutos
-      setTimeout(async () => {
-        try {
-          const retry = await fetch("https://api.retellai.com/v2/create-phone-call", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${RETELL_API_KEY}`,
-            },
-            body: JSON.stringify({
-              agent_id: RETELL_AGENT_ID,
-              from_number: RETELL_FROM_NUMBER,
-              to_number: normalizedPhone,
-              variables: {
-                name,
-                checkout_url: checkoutUrl,
-                retry: true,
-              },
-            }),
-          });
-          console.log("🔁 Rechamada feita:", await retry.json());
-        } catch (err) {
-          console.error("❌ Erro ao tentar novamente:", err);
-        }
-      }, 10 * 60 * 1000); // 10 minutos
+    // 💾 Se falhar, salva no arquivo de retry
+    if (failed) {
+      console.log("⚠️ Ligação malsucedida. Salvando para retry...");
+
+      const filePath = path.resolve("./calls-to-retry.json");
+      const oldData = fs.existsSync(filePath)
+        ? JSON.parse(fs.readFileSync(filePath, "utf8"))
+        : [];
+
+      oldData.push({
+        name,
+        checkoutUrl,
+        phone: normalizedPhone,
+        attempt: 1,
+        time: Date.now(),
+      });
+
+      fs.writeFileSync(filePath, JSON.stringify(oldData, null, 2));
     }
 
     return res.status(200).json({
