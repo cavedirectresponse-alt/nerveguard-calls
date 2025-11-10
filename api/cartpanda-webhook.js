@@ -8,7 +8,7 @@ export default async function handler(req, res) {
 
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    console.log("📩 Webhook recebido:", body);
+    console.log("📩 Webhook CartPanda recebido:", body);
 
     const d = body.data;
 
@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     const RETELL_AGENT_ID = process.env.RETELL_AGENT_ID;
     const RETELL_FROM_NUMBER = process.env.RETELL_FROM_NUMBER;
 
-    // ☎️ 1ª tentativa
+    // ☎️ 1ª tentativa de ligação
     const retellResp = await fetch("https://api.retellai.com/v2/create-phone-call", {
       method: "POST",
       headers: {
@@ -62,7 +62,9 @@ export default async function handler(req, res) {
 
     const failed =
       retellJson.status === "error" ||
-      ["no_answer", "failed", "busy", "voicemail"].includes(retellJson.call_status);
+      ["no_answer", "failed", "busy", "voicemail", "call_failed", "unanswered"].includes(
+        retellJson.call_status
+      );
 
     // 💾 Se falhar, salva no arquivo de retry
     if (failed) {
@@ -79,6 +81,7 @@ export default async function handler(req, res) {
         phone: normalizedPhone,
         attempt: 1,
         time: Date.now(),
+        reason: retellJson.call_status,
       });
 
       fs.writeFileSync(filePath, JSON.stringify(oldData, null, 2));
@@ -90,7 +93,7 @@ export default async function handler(req, res) {
       first_call: retellJson,
     });
   } catch (error) {
-    console.error("❌ Erro no webhook:", error);
+    console.error("❌ Erro no webhook CartPanda:", error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }
