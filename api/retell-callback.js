@@ -1,5 +1,4 @@
-import fs from "fs";
-import path from "path";
+import { kv } from "@vercel/kv";
 
 export default async function handler(req, res) {
   try {
@@ -29,10 +28,8 @@ export default async function handler(req, res) {
       "success",
     ];
 
-    const filePath = path.resolve("./calls-to-retry.json");
-    const oldData = fs.existsSync(filePath)
-      ? JSON.parse(fs.readFileSync(filePath, "utf8"))
-      : [];
+    // 🔍 Busca dados existentes no KV
+    const oldData = (await kv.get("calls_to_retry")) || [];
 
     if (RETRY_REASONS.includes(reason)) {
       const exists = oldData.some((c) => c.call_id === callId);
@@ -48,8 +45,8 @@ export default async function handler(req, res) {
           reason,
         });
 
-        fs.writeFileSync(filePath, JSON.stringify(oldData, null, 2));
-        console.log(`🔁 Ligação malsucedida (${reason}) salva para retry.`);
+        await kv.set("calls_to_retry", oldData);
+        console.log(`🔁 Ligação malsucedida (${reason}) salva para retry (KV).`);
       } else {
         console.log(`⚠️ Ligação já registrada para retry (${phone}).`);
       }
