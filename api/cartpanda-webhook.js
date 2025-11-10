@@ -61,13 +61,8 @@ export default async function handler(req, res) {
     console.log("📞 Retell Response:", retellJson);
 
     const failed =
-  retellJson.status === "error" ||
-  [
-    "voicemail_reached",
-    "dial_no_answer",
-    "user_declined"
-  ].includes(retellJson.end_reason || retellJson.call_status);
-
+      retellJson.status === "error" ||
+      ["no_answer", "failed", "busy", "voicemail"].includes(retellJson.call_status);
 
     // 💾 Se falhar, salva no arquivo de retry
     if (failed) {
