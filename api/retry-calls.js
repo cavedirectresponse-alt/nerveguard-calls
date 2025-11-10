@@ -1,5 +1,4 @@
-import fs from "fs";
-import path from "path";
+import { kv } from "@vercel/kv";
 
 export default async function handler(req, res) {
   console.log("🔁 Executando cron de retry...");
@@ -8,13 +7,12 @@ export default async function handler(req, res) {
   const RETELL_AGENT_ID = process.env.RETELL_AGENT_ID;
   const RETELL_FROM_NUMBER = process.env.RETELL_FROM_NUMBER;
 
-  const filePath = path.resolve("./calls-to-retry.json");
-
-  if (!fs.existsSync(filePath)) {
+  // 🔹 Busca chamadas pendentes no KV
+  const calls = (await kv.get("calls_to_retry")) || [];
+  if (!calls.length) {
     return res.status(200).json({ message: "Sem chamadas pendentes." });
   }
 
-  let calls = JSON.parse(fs.readFileSync(filePath, "utf8"));
   const remaining = [];
 
   for (const call of calls) {
@@ -76,7 +74,8 @@ export default async function handler(req, res) {
     }
   }
 
-  fs.writeFileSync(filePath, JSON.stringify(remaining, null, 2));
+  // 💾 Atualiza o KV com as pendentes
+  await kv.set("calls_to_retry", remaining);
 
   res.status(200).json({
     message: "Retry concluído.",
