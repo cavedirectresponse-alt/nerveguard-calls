@@ -1,5 +1,4 @@
-import fs from "fs";
-import path from "path";
+import { kv } from "@vercel/kv";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -22,8 +21,7 @@ export default async function handler(req, res) {
       d?.cart_url ||
       (d?.cart_token ? `https://pay.getnerveguard.org/checkout/${d.cart_token}` : null);
 
-    const rawPhone =
-      d?.customer?.phone || d?.customer_info?.phone || d?.phone || null;
+    const rawPhone = d?.customer?.phone || d?.customer_info?.phone || d?.phone || null;
 
     const normalizedPhone = rawPhone
       ? (/^\+/.test(rawPhone) ? rawPhone : `+1${rawPhone.replace(/\D/g, "")}`)
@@ -60,31 +58,27 @@ export default async function handler(req, res) {
     const retellJson = await retellResp.json();
     console.log("📞 Retell Response:", retellJson);
 
+    // 🔁 Se falhar, registra no KV
     const failed =
       retellJson.status === "error" ||
       ["no_answer", "failed", "busy", "voicemail", "call_failed", "unanswered"].includes(
         retellJson.call_status
       );
 
-    // 💾 Se falhar, salva no arquivo de retry
     if (failed) {
-      console.log("⚠️ Ligação malsucedida. Salvando para retry...");
+      console.log("⚠️ Ligação malsucedida. Salvando no KV para retry...");
 
-      const filePath = path.resolve("./calls-to-retry.json");
-      const oldData = fs.existsSync(filePath)
-        ? JSON.parse(fs.readFileSync(filePath, "utf8"))
-        : [];
-
-      oldData.push({
+      const existing = (await kv.get("calls_to_retry")) || [];
+      existing.push({
         name,
         checkoutUrl,
         phone: normalizedPhone,
         attempt: 1,
         time: Date.now(),
-        reason: retellJson.call_status,
+        reason: retellJson.call_status || "unknown",
       });
 
-      fs.writeFileSync(filePath, JSON.stringify(oldData, null, 2));
+      await kv.set("calls_to_retry", existing);
     }
 
     return res.status(200).json({
