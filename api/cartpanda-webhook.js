@@ -7,9 +7,29 @@ export default async function handler(req, res) {
 
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    console.log("📩 Webhook CartPanda recebido:", body);
+    console.log("📩 Webhook CartPanda RECEBIDO:", body);
+
+    // 🔥 1. Aceita somente abandono de carrinho
+    if (body.event !== "order.abandoned") {
+      console.log("⏭️ Ignorando evento — não é abandono.");
+      return res.status(200).json({ success: true, skip: "not_abandoned" });
+    }
 
     const d = body.data;
+
+    // 🔥 2. IDs dos produtos que acionam ligação
+    const TARGET_PRODUCTS = [26257257, 26257299, 26257332];
+
+    const items = d?.items || [];
+
+    const hasTarget = items.some((item) =>
+      TARGET_PRODUCTS.includes(item.product_id)
+    );
+
+    if (!hasTarget) {
+      console.log("⏭️ Abandono sem produtos alvo. Ignorado.");
+      return res.status(200).json({ success: true, skip: "no_target_products" });
+    }
 
     // 🔹 Extrai dados do cliente
     const name =
@@ -21,13 +41,19 @@ export default async function handler(req, res) {
       d?.cart_url ||
       (d?.cart_token ? `https://pay.getnerveguard.org/checkout/${d.cart_token}` : null);
 
-    const rawPhone = d?.customer?.phone || d?.customer_info?.phone || d?.phone || null;
+    const rawPhone =
+      d?.customer?.phone ||
+      d?.customer_info?.phone ||
+      d?.phone ||
+      null;
 
+    // Normaliza telefone +1
     const normalizedPhone = rawPhone
       ? (/^\+/.test(rawPhone) ? rawPhone : `+1${rawPhone.replace(/\D/g, "")}`)
       : null;
 
     if (!normalizedPhone || !checkoutUrl) {
+      console.log("❌ Faltam dados necessários (phone ou checkoutUrl).");
       return res.status(400).json({ success: false, error: "Faltam phone ou checkoutUrl" });
     }
 
@@ -36,7 +62,9 @@ export default async function handler(req, res) {
     const RETELL_AGENT_ID = process.env.RETELL_AGENT_ID;
     const RETELL_FROM_NUMBER = process.env.RETELL_FROM_NUMBER;
 
-    // ☎️ 1ª tentativa de ligação
+    // ☎️ 3. Primeira tentativa de ligação
+    console.log("📞 Enviando ligação Retell (1ª tentativa)...");
+
     const retellResp = await fetch("https://api.retellai.com/v2/create-phone-call", {
       method: "POST",
       headers: {
@@ -51,6 +79,7 @@ export default async function handler(req, res) {
           name,
           checkout_url: checkoutUrl,
           attempt: 1,
+          products: items,
         },
       }),
     });
@@ -58,7 +87,7 @@ export default async function handler(req, res) {
     const retellJson = await retellResp.json();
     console.log("📞 Retell Response:", retellJson);
 
-    // 🔁 Se falhar, registra no KV
+    // 🔁 4. Se falhar, registra no KV para retry
     const failed =
       retellJson.status === "error" ||
       ["no_answer", "failed", "busy", "voicemail", "call_failed", "unanswered"].includes(
@@ -69,6 +98,7 @@ export default async function handler(req, res) {
       console.log("⚠️ Ligação malsucedida. Salvando no KV para retry...");
 
       const existing = (await kv.get("calls_to_retry")) || [];
+
       existing.push({
         name,
         checkoutUrl,
@@ -76,6 +106,7 @@ export default async function handler(req, res) {
         attempt: 1,
         time: Date.now(),
         reason: retellJson.call_status || "unknown",
+        products: items,
       });
 
       await kv.set("calls_to_retry", existing);
@@ -83,11 +114,12 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "Webhook processado. Ligação enviada à Retell.",
+      triggered: true,
       first_call: retellJson,
     });
+
   } catch (error) {
-    console.error("❌ Erro no webhook CartPanda:", error);
+    console.error("❌ ERRO no webhook CartPanda:", error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }
