@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     console.log("📩 Webhook CartPanda RECEBIDO:", body);
 
     // 🔥 1. Aceita somente abandono de carrinho
-    if (body.event !== "order.abandoned") {
+    if (body.event !== "order.abandoned" && body.event !== "abandoned.created") {
       console.log("⏭️ Ignorando evento — não é abandono.");
       return res.status(200).json({ success: true, skip: "not_abandoned" });
     }
@@ -20,15 +20,28 @@ export default async function handler(req, res) {
     // 🔥 2. IDs dos produtos que acionam ligação
     const TARGET_PRODUCTS = [26257257, 26257299, 26257332];
 
-    const items = d?.items || [];
+    // 🔥 3. Pega itens do carrinho no formato atual OU antigo
+    const items = d?.cart_line_items || d?.items || [];
+    console.log("🟩 ITENS DETECTADOS:", JSON.stringify(items, null, 2));
 
-    const hasTarget = items.some((item) =>
-      TARGET_PRODUCTS.includes(item.product_id)
-    );
+    // 🔥 4. Detecta product_id em QUALQUER formato
+    const hasTarget = items.some((item) => {
+      const productId =
+        item.product_id ||
+        item?.product?.id ||
+        item?.variant?.product_id ||
+        item?.productId ||
+        null;
+
+      return TARGET_PRODUCTS.includes(Number(productId));
+    });
 
     if (!hasTarget) {
       console.log("⏭️ Abandono sem produtos alvo. Ignorado.");
-      return res.status(200).json({ success: true, skip: "no_target_products" });
+      return res.status(200).json({
+        success: true,
+        skip: "no_target_products",
+      });
     }
 
     // 🔹 Extrai dados do cliente
@@ -62,7 +75,7 @@ export default async function handler(req, res) {
     const RETELL_AGENT_ID = process.env.RETELL_AGENT_ID;
     const RETELL_FROM_NUMBER = process.env.RETELL_FROM_NUMBER;
 
-    // ☎️ 3. Primeira tentativa de ligação
+    // ☎️ 5. Primeira tentativa de ligação
     console.log("📞 Enviando ligação Retell (1ª tentativa)...");
 
     const retellResp = await fetch("https://api.retellai.com/v2/create-phone-call", {
@@ -79,7 +92,7 @@ export default async function handler(req, res) {
           name,
           checkout_url: checkoutUrl,
           attempt: 1,
-          products: items,
+          items,
         },
       }),
     });
@@ -87,7 +100,7 @@ export default async function handler(req, res) {
     const retellJson = await retellResp.json();
     console.log("📞 Retell Response:", retellJson);
 
-    // 🔁 4. Se falhar, registra no KV para retry
+    // 🔁 6. Se falhar, salva no KV para retry
     const failed =
       retellJson.status === "error" ||
       ["no_answer", "failed", "busy", "voicemail", "call_failed", "unanswered"].includes(
@@ -106,7 +119,7 @@ export default async function handler(req, res) {
         attempt: 1,
         time: Date.now(),
         reason: retellJson.call_status || "unknown",
-        products: items,
+        items,
       });
 
       await kv.set("calls_to_retry", existing);
